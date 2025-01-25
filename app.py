@@ -1,18 +1,22 @@
-# app.py (same code you shared earlier)
 import os
 import gradio as gr
 import requests
 import xml.etree.ElementTree as ET
+from dotenv import load_dotenv
 from groq import Groq
 
-# OpenCellID API Key
-api_key = 'your-opencellid-api-key'
-base_url = 'https://opencellid.org/cell/get'
+# Load environment variables
+load_dotenv()
 
-# Groq API Key
-groq_api_key = 'your-groq-api-key'
+# Fetch API keys from environment variables
+api_key = os.getenv("OPENCELLID_API_KEY")
+base_url = os.getenv("BASE_URL", "https://opencellid.org/cell/get")
+groq_api_key = os.getenv("GROQ_API_KEY")
 
-# Groq client
+if not api_key or not groq_api_key:
+    raise ValueError("API keys are missing! Please set them in the .env file.")
+
+# Initialize Groq client
 groq_client = Groq(api_key=groq_api_key)
 
 # Function to fetch tower data from OpenCellID
@@ -53,12 +57,8 @@ def fetch_tower_data(mcc, mnc, cellid, lac):
 
 # Function to estimate internet speed based on tower data
 def estimate_internet_speed(cell_data):
-    signal_strength = int(cell_data['signal_strength'])
-
-    if signal_strength == 0:
-        signal_strength = -80
-
-    range_value = int(cell_data['range'])
+    signal_strength = int(cell_data.get('signal_strength', -80))
+    range_value = int(cell_data.get('range', 1000))
 
     if signal_strength > -70:
         speed = 50
@@ -82,20 +82,14 @@ def estimate_internet_speed(cell_data):
 # Function for Groq chat completion (WaveBuddy chat)
 def wavebuddy_chat(query):
     chat_completion = groq_client.chat.completions.create(
-        messages=[
-            {
-                "role": "user",
-                "content": f"Provide a helpful and concise response to this question: {query}",
-            }
-        ],
+        messages=[{"role": "user", "content": query}],
         model="llama-3.3-70b-versatile",
     )
-
     return chat_completion.choices[0].message.content
 
 # Function to clear WaveBuddy input
 def clear_wavebuddy_input():
-    return "", ""  # Clear input and output
+    return "", ""
 
 # Gradio Interface function for main app (fetching tower data)
 def gradio_interface(mcc, mnc, cellid, lac):
@@ -107,7 +101,7 @@ def gradio_interface(mcc, mnc, cellid, lac):
             output += f"{key}: {value}\n"
 
         predicted_speed = estimate_internet_speed(tower_data)
-        output += f"\nPredicted Internet Speed for tower {tower_data['cellid']}: {predicted_speed} Mbps"
+        output += f"\nPredicted Internet Speed: {predicted_speed:.2f} Mbps"
 
         return output
     else:
@@ -117,40 +111,34 @@ def gradio_interface(mcc, mnc, cellid, lac):
 def create_gradio_ui():
     with gr.Blocks() as demo:
         gr.Markdown("""
-        # WaveTracker - Network Troubleshooting
-        Welcome to **WaveTracker**. Ask questions related to your network and receive helpful suggestions.
+        # WaveTracker
+        A tool for network troubleshooting and assistance.
         """)
         
         with gr.Tabs():
             with gr.TabItem("Network Info"):
-                with gr.Row():
-                    mcc_input = gr.Number(label="Enter Mobile Country Code (MCC)", elem_id="mcc_input")
-                    mnc_input = gr.Number(label="Enter Mobile Network Code (MNC)", elem_id="mnc_input")
-                    lac_input = gr.Number(label="Enter Location Area Code (LAC)", elem_id="lac_input")
-                    cellid_input = gr.Number(label="Enter Cell ID", elem_id="cellid_input")
-
-                with gr.Row():
-                    fetch_button = gr.Button("Fetch Tower Data and Predict Speed", elem_id="fetch_button", elem_classes="primary-btn")
-                    result_output = gr.Textbox(label="Output", interactive=False, lines=10, elem_id="result_output", elem_classes="output-box")
+                mcc_input = gr.Number(label="Mobile Country Code (MCC)")
+                mnc_input = gr.Number(label="Mobile Network Code (MNC)")
+                lac_input = gr.Number(label="Location Area Code (LAC)")
+                cellid_input = gr.Number(label="Cell ID")
                 
-                fetch_button.click(gradio_interface,
+                fetch_button = gr.Button("Fetch Data")
+                result_output = gr.Textbox(label="Output", lines=10)
+
+                fetch_button.click(gradio_interface, 
                                    inputs=[mcc_input, mnc_input, cellid_input, lac_input],
                                    outputs=result_output)
 
             with gr.TabItem("WaveBuddy"):
-                gr.Markdown("### Ask your WaveBuddy a question")
-                user_query = gr.Textbox(label="Your Query", placeholder="Enter your query here", elem_id="user_query", elem_classes="input-box")
-                
-                with gr.Row():
-                    submit_button = gr.Button("Submit", elem_id="submit_button", elem_classes="submit-btn")
-                    clear_button = gr.Button("Clear", elem_id="clear_button", elem_classes="clear-btn")
-                
-                wavebuddy_response = gr.Textbox(label="WaveBuddy Response", interactive=False, elem_id="wavebuddy_response", elem_classes="output-box")
-                
-                submit_button.click(wavebuddy_chat, inputs=user_query, outputs=wavebuddy_response)
-                clear_button.click(clear_wavebuddy_input, inputs=None, outputs=[user_query, wavebuddy_response])
+                query_input = gr.Textbox(label="Ask WaveBuddy")
+                submit_button = gr.Button("Submit")
+                clear_button = gr.Button("Clear")
+                response_output = gr.Textbox(label="WaveBuddy Response", lines=5)
 
-        demo.launch(share=True)
+                submit_button.click(wavebuddy_chat, inputs=query_input, outputs=response_output)
+                clear_button.click(clear_wavebuddy_input, inputs=None, outputs=[query_input, response_output])
+
+        demo.launch()
 
 # Run Gradio interface
 create_gradio_ui()
