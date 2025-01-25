@@ -1,0 +1,4 @@
+gradio
+requests
+xml.etree.ElementTree
+groq
